@@ -29,5 +29,6 @@ python train.py --epoch=100 --lr=0.01 --board=<where to put your tensorboard log
 ```
 in this case, `dp` decides whether to use data parallel to support multi-gpus and `classes` decides how many classes to segment.
 
+## To Do
 - [ ] Add Multi-task segmentation
-- [ ] h
+- [ ] 
