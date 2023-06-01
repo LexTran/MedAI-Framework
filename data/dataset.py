@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 import torch
-from monai.data import DataLoader,list_data_collate,decollate_batch
+from monai.data import DataLoader,list_data_collate,decollate_batch,pad_list_data_collate
 import monai
 from monai import transforms as tfs
 
@@ -67,7 +67,7 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             batch_size=batch_size,
             shuffle=True,
             num_workers=0,
-            collate_fn=list_data_collate,
+            collate_fn=pad_list_data_collate,
             pin_memory=torch.cuda.is_available(),
         )
         # val_set = monai.data.Dataset(data=val_files, transform=val_transforms)
@@ -75,7 +75,7 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             val_set,
             batch_size=batch_size,
             num_workers=0,
-            collate_fn=list_data_collate,
+            collate_fn=pad_list_data_collate,
         )
         return train_loader, val_loader
     elif mode == "test":
@@ -95,6 +95,6 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             test_loader,
             batch_size=batch_size,
             num_workers=0,
-            collate_fn=list_data_collate,
+            collate_fn=pad_list_data_collate,
         )
         return test_loader
