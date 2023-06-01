@@ -19,14 +19,17 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
     data_name = [os.path.basename(i).split(".nii.gz")[0] for i in ct_set]
 
     base_files = [{"volume": volume, "label": label, "name": name} for volume, label, name in zip(ct_set, label_set, data_name)]
-    length = len(base_files) 
-    len_list = [math.floor(0.9*length), math.ceil(0.1*length)]
-    train_files, val_files = torch.utils.data.random_split(base_files,lengths=len_list,generator=torch.Generator().manual_seed(42))
+    if mode == "train":
+        length = len(base_files) 
+        len_list = [math.floor(0.9*length), math.ceil(0.1*length)]
+        train_files, val_files = torch.utils.data.random_split(base_files,lengths=len_list,generator=torch.Generator().manual_seed(42))
+    elif mode == "test":
+        test_files = base_files
 
     # how to load the data
     if mode == "train":
         train_transforms = tfs.Compose([
-            tfs.LoadImaged(keys=["volume","label"], reader="NibabelReader"),
+            tfs.LoadImaged(keys=["volume","label"]),
             tfs.EnsureChannelFirstd(keys=["volume","label"]),
             tfs.NormalizeIntensityd(keys=["volume"]),
             tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
@@ -49,9 +52,15 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             tfs.RandFlipd(keys=["volume","label"],spatial_axis=1,prob=0.1),
             tfs.RandFlipd(keys=["volume","label"],spatial_axis=2,prob=0.1),
         ])
-        train_set = monai.data.Dataset(data=train_files, transform=train_transforms)
+        train_set = monai.data.CacheDataset(data=train_files,
+                                            transform=train_transforms,
+                                            cache_num=24,
+                                            cache_rate=1.0,
+                                            num_workers=8,)
+        import pdb
+        pdb.set_trace()
         val_transforms = tfs.Compose([
-            tfs.LoadImaged(keys=["volume","label"], reader="NibabelReader"),
+            tfs.LoadImaged(keys=["volume","label"]),
             tfs.EnsureChannelFirstd(keys=["volume","label"]),
             tfs.NormalizeIntensityd(keys=["volume"]),
             tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
@@ -59,7 +68,11 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
             tfs.EnsureTyped(keys=["volume", "label"], device=torch.device("cpu"), track_meta=True),
         ])
-        val_set = monai.data.Dataset(data=val_files, transform=val_transforms)
+        val_set = monai.data.CacheDataset(data=val_files,
+                                            transform=val_transforms,
+                                            cache_num=6,
+                                            cache_rate=1.0,
+                                            num_workers=4,)
 
         # train_set = monai.data.Dataset(data=train_files, transform=train_transforms)
         train_loader =DataLoader(
@@ -79,8 +92,8 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
         )
         return train_loader, val_loader
     elif mode == "test":
-        base_transforms = tfs.Compose([
-            tfs.LoadImaged(keys=["volume","label"], reader="NibabelReader"),
+        test_transforms = tfs.Compose([
+            tfs.LoadImaged(keys=["volume","label"]),
             tfs.EnsureChannelFirstd(keys=["volume","label"]),
             tfs.NormalizeIntensityd(keys=["volume"]),
             tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
@@ -88,7 +101,11 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
             tfs.EnsureTyped(keys=["image", "label"], device=torch.device("cpu"), track_meta=True),
         ])
-        test_loader = monai.data.Dataset(data=base_files, transform=base_transforms)
+        test_loader = monai.data.CacheDataset(data=test_files,
+                                            transform=test_transforms,
+                                            cache_num=6,
+                                            cache_rate=1.0,
+                                            num_workers=4,)
 
         # train_set = monai.data.Dataset(data=train_files, transform=train_transforms)
         test_loader =DataLoader(
