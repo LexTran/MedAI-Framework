@@ -1,6 +1,5 @@
 from torch.utils.tensorboard import SummaryWriter
-from data.dataset import get_loader 
-from utils.metric import compute_metrics
+from data.dataset import get_loader
 
 import numpy as np
 import torch
