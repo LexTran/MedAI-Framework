@@ -18,17 +18,13 @@ Here we give the environment tested on our device, but we havn't tried on differ
 
 To train your own network, you need to create a model file under `\network` and use it in `train.py`
 
-Also, you will need to modify the data path in `train.py` 
->52  ct_path1 = "/home/ubuntu/disk1/TLX/datasets/seg_demo/images/"
-
->53  mask_path1 = "/home/ubuntu/disk1/TLX/datasets/seg_demo/labels/"
 
 The command to run the file is as follow:
 ```
-python train.py --epoch=100 --lr=0.01 --board=<where to put your tensorboard log> --save_path=<where to save your model> --output_path=<where to save your results for visualization> --dp=True --classes=1
+python train.py --epoch=100 --lr=0.01 --board=<where to put your tensorboard log> --save_path=<where to save your model> --output_path=<where to save your results for visualization> --dp=True --classes=1 --data_path=<your data path> --mask_path=<your label path>
 ```
 in this case, `dp` decides whether to use data parallel to support multi-gpus and `classes` decides how many classes to segment.
 
 ## To Do
-- [ ] Add Multi-task segmentation
-- [ ] 
+- [x] Add Multi-task segmentation
+- [ ] Convert multi labels into one label
