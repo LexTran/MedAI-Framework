@@ -51,20 +51,13 @@ else:
     cudnn.benchmark = False
     device_ids = [1]
 
-# model = UNet(
-#     spatial_dims=3,
-#     in_channels=1,
-#     out_channels=int(args.classes),
-#     channels=(16, 32, 64, 128, 256),
-#     strides=(2, 2, 2, 2),
-#     num_res_units=2,
-# )
-model = SwinUNETR(
-    img_size=(96, 96, 96),
+model = UNet(
+    spatial_dims=3,
     in_channels=1,
     out_channels=int(args.classes),
-    feature_size=48,
-    use_checkpoint=True,
+    channels=(16, 32, 64, 128, 256),
+    strides=(2, 2, 2, 2),
+    num_res_units=2,
 )
 
 if args.dp:
