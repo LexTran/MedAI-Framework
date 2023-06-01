@@ -15,8 +15,7 @@ from monai.losses import DiceLoss, DiceCELoss
 from monai.metrics import DiceMetric
 from torchmetrics.functional import dice
 from monai.data import (decollate_batch,
-                    load_decathlon_datalist,
-                    set_track_meta)
+                    load_decathlon_datalist)
 
 import argparse
 import os
@@ -45,7 +44,7 @@ args = parser.parse_args()
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 if args.dp:
-    device_ids = [0,1]
+    device_ids = [i for i in range(torch.cuda.device_count())]
 else:
     os.environ['CUDA_VISIBLE_DEVICES'] = str(np.argmax([int(x.split()[2]) for x in subprocess.Popen(
         "nvidia-smi -q -d Memory | grep -A4 GPU | grep Free", shell=True, stdout=subprocess.PIPE).stdout.readlines()]))
@@ -79,7 +78,6 @@ ct_path = [ct_path1]
 label_path = [mask_path1]
 
 train_loader, val_loader = get_loader(batch_size, label_path, ct_path, mode='train')
-# set_track_meta(False)
 
 optimizer = optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=1e-5)
 scheduler = WarmupCosineSchedule(optimizer, 
@@ -196,7 +194,7 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                     save_volume = sitk.GetImageFromArray(res_vol)
                     sitk.WriteImage(save_volume, val_output_path+str(epoch+1)+"/"+val_name[idx]+".nii.gz")
         
-        mean_dice = dice_metric/len(val_loader)
+        mean_dice = Dice.item()
 
         print("val dice:{:.4f}".format(mean_dice))
         writer.add_scalar('val dice:{:%.4f}',mean_dice,epoch + 1)
