@@ -25,6 +25,10 @@ python train.py --epoch=100 --lr=0.01 --board=<where to put your tensorboard log
 ```
 in this case, `dp` decides whether to use data parallel to support multi-gpus and `classes` decides how many classes to segment.
 
+# Tips
+
+We have provided many useful tools to help you perform data format convertion such as, `mhd -> nii`, `ima -> nii`, `nii -> stl`. Those tools are put under `utils`, have fun with them your way.
+
 ## To Do
 - [x] Add Multi-task segmentation
 - [ ] Convert multi labels into one label
