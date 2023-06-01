@@ -8,7 +8,7 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import SimpleITK as sitk
 from monai.optimizers import WarmupCosineSchedule
-from monai.networks.nets import UNet, UNETR
+from monai.networks.nets import UNet, UNETR, SwinUNETR
 from monai import transforms as tfs
 from monai.inferers import sliding_window_inference
 from monai.losses import DiceLoss, DiceCELoss
@@ -59,18 +59,12 @@ else:
 #     strides=(2, 2, 2, 2),
 #     num_res_units=2,
 # )
-model = UNETR(
+model = SwinUNETR(
+    img_size=(96, 96, 96),
     in_channels=1,
     out_channels=int(args.classes),
-    img_size=(96, 96, 96),
-    feature_size=16,
-    hidden_size=768,
-    mlp_dim=3072,
-    num_heads=12,
-    pos_embed="perceptron",
-    norm_name="instance",
-    res_block=True,
-    dropout_rate=0.0,
+    feature_size=48,
+    use_checkpoint=True,
 )
 
 if args.dp:
