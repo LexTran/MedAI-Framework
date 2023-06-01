@@ -28,10 +28,21 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
         train_transforms = tfs.Compose([
             tfs.LoadImaged(keys=["volume","label"], reader="NibabelReader"),
             tfs.EnsureChannelFirstd(keys=["volume","label"]),
-            tfs.Spacingd(keys=["volume","label"], pixdim=(1.0, 1.0, 1.0), mode="bilinear"),
-            tfs.Resized(keys=["volume","label"], spatial_size=[128,128,128]),
             tfs.NormalizeIntensityd(keys=["volume"]),
-            tfs.RandSpatialCropd(keys=["volume","label"], roi_size=[96,96,96], random_size=False),
+            tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
+            tfs.Orientationd(keys=["volume", "label"], axcodes="RAS"),
+            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
+            tfs.EnsureTyped(keys=["volume", "label"], device=torch.device("cpu"), track_meta=False),
+            tfs.RandCropByPosNegLabeld(
+                keys=["volume", "label"],
+                label_key="label",
+                spatial_size=(48, 48, 48),
+                pos=1,
+                neg=1,
+                num_samples=4,
+                image_key="volume",
+                image_threshold=0,
+            ),
             tfs.RandRotated(keys=["volume","label"],range_x=[0.4,0.4],range_y=[0.4,0.4],range_z=[0.4,0.4],prob=0.5,
                             keep_size=True,mode="bilinear",padding_mode="zeros"),
             tfs.RandFlipd(keys=["volume","label"],spatial_axis=0,prob=0.1),
@@ -42,9 +53,11 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
         val_transforms = tfs.Compose([
             tfs.LoadImaged(keys=["volume","label"], reader="NibabelReader"),
             tfs.EnsureChannelFirstd(keys=["volume","label"]),
-            tfs.Spacingd(keys=["volume","label"], pixdim=(1.0, 1.0, 1.0), mode="bilinear"),
-            tfs.Resized(keys=["volume","label"], spatial_size=[128,128,128]),
             tfs.NormalizeIntensityd(keys=["volume"]),
+            tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
+            tfs.Orientationd(keys=["volume", "label"], axcodes="RAS"),
+            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
+            tfs.EnsureTyped(keys=["volume", "label"], device=torch.device("cpu"), track_meta=True),
         ])
         val_set = monai.data.Dataset(data=val_files, transform=val_transforms)
 
@@ -69,9 +82,11 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
         base_transforms = tfs.Compose([
             tfs.LoadImaged(keys=["volume","label"], reader="NibabelReader"),
             tfs.EnsureChannelFirstd(keys=["volume","label"]),
-            tfs.Spacingd(keys=["volume","label"], pixdim=(1.0, 1.0, 1.0), mode="bilinear"),
-            tfs.Resized(keys=["volume","label"], spatial_size=[128,128,128]),
-            tfs.NormalizeIntensityd(keys=["volume"]), 
+            tfs.NormalizeIntensityd(keys=["volume"]),
+            tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
+            tfs.Orientationd(keys=["volume", "label"], axcodes="RAS"),
+            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
+            tfs.EnsureTyped(keys=["image", "label"], device=torch.device("cpu"), track_meta=True),
         ])
         test_loader = monai.data.Dataset(data=base_files, transform=base_transforms)
 
