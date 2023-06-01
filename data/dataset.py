@@ -57,8 +57,6 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
                                             cache_num=24,
                                             cache_rate=1.0,
                                             num_workers=8,)
-        import pdb
-        pdb.set_trace()
         val_transforms = tfs.Compose([
             tfs.LoadImaged(keys=["volume","label"]),
             tfs.EnsureChannelFirstd(keys=["volume","label"]),
