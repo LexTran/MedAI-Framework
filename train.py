@@ -61,7 +61,7 @@ else:
 # )
 model = UNETR(
     in_channels=1,
-    out_channels=14,
+    out_channels=int(args.classes),
     img_size=(96, 96, 96),
     feature_size=16,
     hidden_size=768,
