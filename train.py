@@ -12,10 +12,12 @@ from monai.optimizers import WarmupCosineSchedule
 from monai.networks.nets import UNet
 from monai import transforms as tfs
 from monai.inferers import sliding_window_inference
-from monai.losses import DiceLoss
+from monai.losses import DiceLoss, DiceCELoss
 from monai.metrics import DiceMetric
 from torchmetrics.functional import dice
-from monai.data import decollate_batch
+from monai.data import (decollate_batch,
+                    load_decathlon_datalist,
+                    set_track_meta)
 
 import argparse
 import os
@@ -33,7 +35,11 @@ parser.add_argument('--board', default='./runs', help="tensorboard path")
 parser.add_argument('--save_path', default='./checkpoints/', help="save path")
 parser.add_argument('--output_path', default='./output/', help="save epoch")
 parser.add_argument('--dp', default=False, help="whether to use ddp or not")
-parser.add_argument('--classes', default=1, help="number of classes")
+parser.add_argument('--classes', default=1, help="how many classes to segment")
+parser.add_argument('--data_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/images/", 
+                    help="where you put your data")
+parser.add_argument('--mask_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/labels/", 
+                    help="where you put your mask")
 args = parser.parse_args()
 
 # set GPU
@@ -46,15 +52,6 @@ else:
         "nvidia-smi -q -d Memory | grep -A4 GPU | grep Free", shell=True, stdout=subprocess.PIPE).stdout.readlines()]))
     cudnn.benchmark = False
     device_ids = [1]
-
-# loading datasets
-batch_size = int(args.bs)
-ct_path1 = "/home/ubuntu/disk1/TLX/datasets/seg_demo/images/"
-mask_path1 = "/home/ubuntu/disk1/TLX/datasets/seg_demo/labels/"
-ct_path = [ct_path1]
-label_path = [mask_path1]
-
-train_loader, val_loader = get_loader(batch_size, label_path, ct_path, mode='train')
 
 model = UNet(
     spatial_dims=3,
@@ -75,10 +72,21 @@ else:
     model.to(device)
 # device = torch.device("cpu")
 
-optimizer = optim.Adam(model.parameters(), lr=float(args.lr), weight_decay=1e-5)
+# loading datasets
+batch_size = int(args.bs)
+ct_path1 = args.data_path
+mask_path1 = args.mask_path
+ct_path = [ct_path1]
+label_path = [mask_path1]
+
+train_loader, val_loader = get_loader(batch_size, label_path, ct_path, mode='train')
+# set_track_meta(False)
+
+optimizer = optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=1e-5)
 scheduler = WarmupCosineSchedule(optimizer, 
                                 warmup_steps=10*len(train_loader), 
                                 t_total=int(args.epoch)*len(train_loader))
+scaler = torch.cuda.amp.GradScaler()
 
 # loading checkpoints
 if args.resume_path is not None:
@@ -121,8 +129,7 @@ if best_dice_metric == None:
     best_dice_metric = -1
     best_dice_epoch = 0
     
-loss_fn = DiceLoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
-post_trans = tfs.Compose([tfs.Activations(sigmoid=True), tfs.AsDiscrete(threshold=0.5)])
+loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
 
 # init optimizer for scheduler
 optimizer.zero_grad()
@@ -141,16 +148,21 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
             label = label.float().to(device)
             ct = ct.float().to(device)
             name = sample['name']
-
-            seg = model(ct)
-            seg_loss = int(args.l1)*loss_fn(seg, label)
+            with torch.cuda.amp.autocast():
+                seg = model(ct)
+                seg_loss = int(args.l1)*loss_fn(seg, label)
             loss = seg_loss
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
+            scaler.scale(loss).backward()
             running_loss += loss.item()
+            scaler.unscale_(optimizer)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+            # loss.backward()
+            # optimizer.step()
+
+            # running_loss += loss.item()
 
     writer.add_scalar('average loss: {:%.4f}', running_loss/len(train_loader), epoch+1)
     print('epoch %d average loss: %.4f' % (epoch+1, running_loss/len(train_loader)))
@@ -167,17 +179,22 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 val_name = val_sample['name']
                 
                 # segmentation
-                val_seg = sliding_window_inference(val_ct,(96,96,96),4,model,overlap=0.8)
-                val_seg = [post_trans(val_pred_tensor) for val_pred_tensor in val_seg][0].unsqueeze(0)
-                dice_metric = dice_metric + dice(val_seg[0], val_label.int())
+                with torch.cuda.amp.autocast():
+                    val_seg = sliding_window_inference(val_ct,(96,96,96),4,model,overlap=0.8)
+                val_labels_list = decollate_batch(val_label)
+                val_labels_convert = [tfs.AsDiscrete(to_onehot=14)(val_label_tensor) for val_label_tensor in val_labels_list]
+                val_outputs_list = decollate_batch(val_seg)
+                val_output_convert = [tfs.AsDiscrete(argmax=True, to_onehot=14)(val_pred_tensor) for val_pred_tensor in val_outputs_list]
+                Dice = DiceMetric(include_background=True, reduction="mean", 
+                                  get_not_nans=False)(y_pred=val_output_convert, y=val_labels_convert).mean()
 
                 # save validation results for visualization
+                save_seg = torch.argmax(val_seg, dim=1).detach().cpu()
                 if not os.path.exists(val_output_path+str(epoch+1)):
                     os.makedirs(val_output_path+str(epoch+1))
-                for idx in range(val_seg.shape[0]):
-                    res_vol = val_seg.float().cpu().numpy()
-                    pred = res_vol[idx].squeeze(0)
-                    save_volume = sitk.GetImageFromArray(pred)
+                for idx in range(save_seg.shape[0]):
+                    res_vol = save_seg[idx].numpy()
+                    save_volume = sitk.GetImageFromArray(res_vol)
                     sitk.WriteImage(save_volume, val_output_path+str(epoch+1)+"/"+val_name[idx]+".nii.gz")
         
         mean_dice = dice_metric/len(val_loader)
