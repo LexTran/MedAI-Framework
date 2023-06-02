@@ -79,6 +79,10 @@ ct_path = [ct_path1]
 label_path = [mask_path1]
 
 train_loader, val_loader = get_loader(batch_size, label_path, ct_path, mode='train')
+shape = train_loader.dataset[0][0]["volume"].shape
+num_sample = len(train_loader.dataset[0])
+flops, params = profile(model, inputs=(torch.randn(num_sample,shape[0],shape[1],shape[2],shape[3]).to(device),))
+print('flops: {:.2f}G, params: {:.2f}M'.format(flops/1e9, params/1e6))
 
 optimizer = optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=1e-5)
 scheduler = WarmupCosineSchedule(optimizer, 
@@ -123,7 +127,6 @@ writer = SummaryWriter(args.board)
 start = time.time()
 val_interval = 1
 save_interval = 25
-flops = None
 if best_dice_metric == None:
     best_dice_metric = -1
     best_dice_epoch = 0
@@ -148,9 +151,6 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
             ct = ct.float().to(device)
             name = sample['name']
             with torch.cuda.amp.autocast():
-                if flops is None:
-                    flops, params = profile(model, inputs=(ct,))
-                    print('flops: {:.2f}G, params: {:.2f}M'.format(flops/1e9, params/1e6))
                 seg = model(ct)
                 seg_loss = int(args.l1)*loss_fn(seg, label)
             loss = seg_loss
