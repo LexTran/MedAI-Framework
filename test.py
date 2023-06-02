@@ -11,6 +11,8 @@ from monai import transforms as tfs
 from monai.metrics import DiceMetric
 from monai.data import (decollate_batch,
                     load_decathlon_datalist)
+from thop import profile
+
 import argparse
 import os
 import subprocess
@@ -46,6 +48,8 @@ ct_path = [ct_path1]
 drr_path = [x_path1]
 
 test_loader = get_loader(batch_size, drr_path, ct_path, mode='test')
+shape = test_loader.dataset[0][0]["volume"].shape
+num_sample = len(test_loader.dataset[0])
 
 model = UNet(
     dimensions=3,
@@ -65,6 +69,8 @@ else:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 # device = torch.device("cpu")
+flops, params = profile(model, inputs=(torch.randn(num_sample,shape[0],shape[1],shape[2],shape[3]).to(device),))
+print('flops: {:.2f}G, params: {:.2f}M'.format(flops/1e9, params/1e6))
 
 # loading checkpoints
 checkpoint = torch.load(args.resume_path, map_location=torch.device("cpu"))
