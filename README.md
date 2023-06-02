@@ -13,13 +13,13 @@ Here we give the environment tested on our device, but we havn't tried on differ
 - opencv-python == 4.7.0.68
 - monai == 1.1.0
 - simpleitk == 2.2.0
+- thop == 0.1.1.post2209072238
 
 ## Training
 
 To train your own network, you need to create a model file under `\network` and use it in `train.py`
 
-
-The command to run the file is as follow:
+The command to run training is as follow:
 ```
 python train.py --epoch=100 --lr=0.01 --board=<where to put your tensorboard log> --save_path=<where to save your model> --output_path=<where to save your results for visualization> --dp=True --classes=1 --data_path=<your data path> --mask_path=<your label path>
 ```
