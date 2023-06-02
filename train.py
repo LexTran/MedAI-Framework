@@ -16,6 +16,7 @@ from monai.metrics import DiceMetric
 from torchmetrics.functional import dice
 from monai.data import (decollate_batch,
                     load_decathlon_datalist)
+from thop import profile
 
 import argparse
 import os
@@ -122,6 +123,7 @@ writer = SummaryWriter(args.board)
 start = time.time()
 val_interval = 1
 save_interval = 25
+flops = None
 if best_dice_metric == None:
     best_dice_metric = -1
     best_dice_epoch = 0
@@ -146,6 +148,9 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
             ct = ct.float().to(device)
             name = sample['name']
             with torch.cuda.amp.autocast():
+                if flops is None:
+                    flops, params = profile(model, inputs=(ct,))
+                    print('flops: {:.2f}G, params: {:.2f}M'.format(flops/1e9, params/1e6))
                 seg = model(ct)
                 seg_loss = int(args.l1)*loss_fn(seg, label)
             loss = seg_loss
