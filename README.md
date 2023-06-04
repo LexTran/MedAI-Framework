@@ -50,4 +50,5 @@ We have provided many useful tools to help you perform data format convertion su
 - [x] Convert multi labels into one label
 - [ ] Semi-supervised support
 - [ ] Accelerate 3d convolution using self-defined operator in Taichi
+- [ ] Extend this framework to enable registration and reconstruction
 
