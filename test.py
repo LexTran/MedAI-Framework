@@ -147,7 +147,7 @@ for step, test_sample in enumerate(test_loader):
             for idx in range(test_label.shape[0]):
                 label = test_label[idx].detach().cpu().numpy().astype(np.uint8)
                 save_label = sitk.GetImageFromArray(label)
-                sitk.WriteImage(save_label, test_output_path+"/trans_label/"+test_name[idx]+post_fix)
+                sitk.WriteImage(save_label, test_output_path+"/trans_label/"+test_name[idx]+'_ori'+post_fix)
         for idx in range(save_seg.shape[0]):
             res_vol = save_seg[idx].numpy().astype(np.uint8)
             save_volume = sitk.GetImageFromArray(res_vol)

@@ -241,7 +241,7 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                     for idx in range(val_label.shape[0]):
                         label = val_label[idx].detach().cpu().numpy().astype(np.uint8)
                         save_label = sitk.GetImageFromArray(label)
-                        sitk.WriteImage(save_label, val_output_path+"/trans_label/"+val_name[idx]+post_fix)
+                        sitk.WriteImage(save_label, val_output_path+"/trans_label/"+val_name[idx]+'_ori'+post_fix)
                 for idx in range(save_seg.shape[0]):
                     res_vol = save_seg[idx].numpy().astype(np.uint8)
                     save_volume = sitk.GetImageFromArray(res_vol)
