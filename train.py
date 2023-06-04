@@ -239,7 +239,7 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 if not os.path.exists(val_output_path+"/trans_label/"):
                     os.makedirs(val_output_path+"/trans_label/")
                     for idx in range(val_label.shape[0]):
-                        label = val_label[idx].detach().cpu().numpy().astype(np.uint8)
+                        label = val_label[idx].detach().cpu().squeeze(0).numpy().astype(np.uint8)
                         save_label = sitk.GetImageFromArray(label)
                         sitk.WriteImage(save_label, val_output_path+"/trans_label/"+val_name[idx]+'_ori'+post_fix)
                 for idx in range(save_seg.shape[0]):

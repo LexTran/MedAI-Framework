@@ -145,7 +145,7 @@ for step, test_sample in enumerate(test_loader):
         if not os.path.exists(test_output_path+"/trans_label/"):
             os.makedirs(test_output_path+"/trans_label/")
             for idx in range(test_label.shape[0]):
-                label = test_label[idx].detach().cpu().numpy().astype(np.uint8)
+                label = test_label[idx].detach().cpu().squeeze(0).numpy().astype(np.uint8)
                 save_label = sitk.GetImageFromArray(label)
                 sitk.WriteImage(save_label, test_output_path+"/trans_label/"+test_name[idx]+'_ori'+post_fix)
         for idx in range(save_seg.shape[0]):
