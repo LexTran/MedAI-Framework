@@ -1,5 +1,5 @@
 from torch.utils.tensorboard import SummaryWriter
-from data.dataset import get_loader
+from data.segDataset import get_loader
 
 import numpy as np
 import torch
