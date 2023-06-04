@@ -184,9 +184,9 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 with torch.cuda.amp.autocast():
                     val_seg = sliding_window_inference(val_ct,(96,96,96),4,model,overlap=0.8)
                 val_labels_list = decollate_batch(val_label)
-                val_labels_convert = [tfs.AsDiscrete(to_onehot=14)(val_label_tensor) for val_label_tensor in val_labels_list]
+                val_labels_convert = [tfs.AsDiscrete(to_onehot=int(args.classes))(val_label_tensor) for val_label_tensor in val_labels_list]
                 val_outputs_list = decollate_batch(val_seg)
-                val_output_convert = [tfs.AsDiscrete(argmax=True, to_onehot=14)(val_pred_tensor) for val_pred_tensor in val_outputs_list]
+                val_output_convert = [tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))(val_pred_tensor) for val_pred_tensor in val_outputs_list]
                 Dice = DiceMetric(include_background=True, reduction="mean", 
                                   get_not_nans=False)(y_pred=val_output_convert, y=val_labels_convert).mean()
 

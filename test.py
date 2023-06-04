@@ -96,13 +96,8 @@ test_output_path = args.output_path+'/test/'
 
 start = time.time()
 
-# validation
-# reset metrics for each validation
+# inference
 dice_metric = 0
-psnr_metric = 0
-ssim_metric = 0
-mae_metric = 0
-mse_metric = 0
 model.eval()
 for step, test_sample in enumerate(test_loader):
     with torch.no_grad():
@@ -113,13 +108,13 @@ for step, test_sample in enumerate(test_loader):
         test_seg = sliding_window_inference(test_ct,(96,96,96),4,model,overlap=0.8)
         
         test_labels_list = decollate_batch(test_label)
-        test_labels_convert = [tfs.AsDiscrete(to_onehot=14)(val_label_tensor) for val_label_tensor in val_labels_list]
+        test_labels_convert = [tfs.AsDiscrete(to_onehot=int(args.classes))(test_label_tensor) for test_label_tensor in test_labels_list]
         test_outputs_list = decollate_batch(test_seg)
-        test_output_convert = [tfs.AsDiscrete(argmax=True, to_onehot=14)(val_pred_tensor) for val_pred_tensor in val_outputs_list]
+        test_output_convert = [tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))(test_pred_tensor) for test_pred_tensor in test_outputs_list]
         Dice = DiceMetric(include_background=True, reduction="mean", 
                             get_not_nans=False)(y_pred=test_output_convert, y=test_labels_convert).mean()
         
-        # save validation results for visualization
+        # save test results for visualization
         save_seg = torch.argmax(test_seg, dim=1).detach().cpu()
         if not os.path.exists(test_output_path):
             os.makedirs(test_output_path)
