@@ -34,11 +34,12 @@ parser.add_argument('--board', default='./runs', help="tensorboard path")
 parser.add_argument('--save_path', default='./checkpoints/', help="save path")
 parser.add_argument('--output_path', default='./output/', help="save epoch")
 parser.add_argument('--dp', default=False, help="whether to use ddp or not")
-parser.add_argument('--classes', default=2, help="how many classes to segment")
-parser.add_argument('--data_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/images/", 
+parser.add_argument('--classes', default=1, help="how many classes to segment")
+parser.add_argument('--data_path', default="../../datasets/seg_demo/images/", 
                     help="where you put your data")
-parser.add_argument('--mask_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/labels/", 
+parser.add_argument('--mask_path', default="../../datasets/seg_demo/labels/", 
                     help="where you put your mask")
+parser.add_argument('--amp', default=False, help="whether to use amp or not")
 args = parser.parse_args()
 
 # set GPU
@@ -92,7 +93,8 @@ optimizer = optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=1e-5
 scheduler = WarmupCosineSchedule(optimizer, 
                                 warmup_steps=10*len(train_loader), 
                                 t_total=int(args.epoch)*len(train_loader))
-scaler = torch.cuda.amp.GradScaler()
+if args.amp:
+    scaler = torch.cuda.amp.GradScaler()
 
 # loading checkpoints
 if args.resume_path is not None:
@@ -135,12 +137,23 @@ save_interval = 25
 if best_dice_metric == None:
     best_dice_metric = -1
     best_dice_epoch = 0
-    
-loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
+
+if int(args.classes) == 1:
+    loss_fn = DiceLoss(sigmoid=True)
+elif int(args.classes) > 1:
+    loss_fn = DiceCELoss(to_onehot_y=True, softmax=True)
 
 # init optimizer for scheduler
 optimizer.zero_grad()
 optimizer.step()
+
+# post-processing
+if int(args.classes) == 1:
+    post_label = tfs.Compose([tfs.AsDiscrete(threshold=0.5)])
+    post_pred = tfs.Compose([tfs.Activations(sigmoid=True),tfs.AsDiscrete(threshold=0.5)])
+elif int(args.classes) > 1:
+    post_label = tfs.Compose([tfs.AsDiscrete(to_onehot=int(args.classes))])
+    post_pred = tfs.Compose([tfs.Activations(softmax=True),tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))])
 
 # training loop
 for epoch in range(epoch_start, epoch_start+int(args.epoch)):
@@ -160,23 +173,22 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 seg_loss = int(args.l1)*loss_fn(seg, label)
             loss = seg_loss
 
-            scaler.scale(loss).backward()
-            # perform gradient clipping in case of gradient explosion 
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=10, norm_type=2)
-            # in case there is nan in results
-            assert not torch.any(torch.isnan(seg)), "nan in seg"
-            running_loss += loss.item()
-            scaler.unscale_(optimizer)
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad()
+            if args.amp:
+                scaler.scale(loss).backward()
+                # perform gradient clipping in case of gradient explosion 
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=10, norm_type=2)
+                # in case there is nan in results
+                assert not torch.any(torch.isnan(seg)), "nan in seg"
+                running_loss += loss.item()
+                scaler.unscale_(optimizer)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
 
-            # we are using amp, so we don't need to use standard loss.backward()
-            # but you can choose to use standard loss.backward() as follow if you want
-
-            # loss.backward()
-            # optimizer.step()
-            # running_loss += loss.item()
+            else:
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
 
     writer.add_scalar('average loss: {:%.4f}', running_loss/len(train_loader), epoch+1)
     print('epoch %d average loss: %.4f' % (epoch+1, running_loss/len(train_loader)))
@@ -195,17 +207,27 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 # segmentation
                 with torch.cuda.amp.autocast():
                     val_seg = sliding_window_inference(val_ct,(32,32,32),4,model,overlap=0.8)
+                
                 val_labels_list = decollate_batch(val_label)
-                val_labels_convert = [tfs.AsDiscrete(to_onehot=int(args.classes))(val_label_tensor) for val_label_tensor in val_labels_list]
+                val_labels_convert = [post_label(i) for i in val_labels_list]
                 val_outputs_list = decollate_batch(val_seg)
-                val_output_convert = [tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))(val_pred_tensor) for val_pred_tensor in val_outputs_list]
+                val_output_convert = [post_pred(i) for i in val_outputs_list]
                 Dice = DiceMetric(include_background=True, reduction="mean", 
                                   get_not_nans=False)(y_pred=val_output_convert, y=val_labels_convert).mean()
 
                 # save validation results for visualization
-                save_seg = torch.argmax(val_seg, dim=1).detach().cpu()
+                if int(args.classes) == 1:
+                    save_seg = val_seg.detach().cpu()
+                elif int(args.classes) > 1:
+                    save_seg = torch.argmax(val_seg, dim=1).detach().cpu()
                 if not os.path.exists(val_output_path+str(epoch+1)):
                     os.makedirs(val_output_path+str(epoch+1))
+                if not os.path.exists(val_output_path+"/trans_label/"):
+                    os.makedirs(val_output_path+"/trans_label/")
+                    for idx in range(val_label.shape[0]):
+                        label = val_label[idx].detach().cpu().numpy().astype(np.uint8)
+                        save_label = sitk.GetImageFromArray(label)
+                        sitk.WriteImage(save_label, val_output_path+"/trans_label/"+val_name[idx]+".nii.gz")
                 for idx in range(save_seg.shape[0]):
                     res_vol = save_seg[idx].numpy().astype(np.uint8)
                     save_volume = sitk.GetImageFromArray(res_vol)

@@ -24,7 +24,7 @@ parser.add_argument('--resume_path', default=None, help='resume path')
 parser.add_argument('--bs', default=1, help='batch size')
 parser.add_argument('--output_path', default='./output/', help="save epoch")
 parser.add_argument('--dp', default=False, help="whether to use ddp or not")
-parser.add_argument('--classes', default=2, help="how many classes to segment")
+parser.add_argument('--classes', default=1, help="how many classes to segment")
 parser.add_argument('--data_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/images/", 
                     help="where you put your data")
 parser.add_argument('--mask_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/labels/", 
@@ -99,6 +99,14 @@ if os.path.exists(args.output_path+'/test/') == False:
     os.makedirs(args.output_path+'/test/')
 test_output_path = args.output_path+'/test/'
 
+# post-processing
+if int(args.classes) == 1:
+    post_label = tfs.Compose([tfs.AsDiscrete(threshold=0.5)])
+    post_pred = tfs.Compose([tfs.Activations(sigmoid=True),tfs.AsDiscrete(threshold=0.5)])
+elif int(args.classes) > 1:
+    post_label = tfs.Compose([tfs.AsDiscrete(to_onehot=int(args.classes))])
+    post_pred = tfs.Compose([tfs.Activations(softmax=True),tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))])
+
 start = time.time()
 
 # inference
@@ -113,16 +121,25 @@ for step, test_sample in enumerate(test_loader):
         test_seg = sliding_window_inference(test_ct,(32,32,32),4,model,overlap=0.8)
         
         test_labels_list = decollate_batch(test_label)
-        test_labels_convert = [tfs.AsDiscrete(to_onehot=int(args.classes))(test_label_tensor) for test_label_tensor in test_labels_list]
+        test_labels_convert = [post_label(i) for i in test_labels_list]
         test_outputs_list = decollate_batch(test_seg)
-        test_output_convert = [tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))(test_pred_tensor) for test_pred_tensor in test_outputs_list]
+        test_output_convert = [post_pred(i) for i in test_outputs_list]
         Dice = DiceMetric(include_background=True, reduction="mean", 
                             get_not_nans=False)(y_pred=test_output_convert, y=test_labels_convert).mean()
         
         # save test results for visualization
-        save_seg = torch.argmax(test_seg, dim=1).detach().cpu()
+        if int(args.classes) == 1:
+            save_seg = test_seg.detach().cpu()
+        elif int(args.classes) > 1:
+            save_seg = torch.argmax(test_seg, dim=1).detach().cpu()
         if not os.path.exists(test_output_path):
             os.makedirs(test_output_path)
+        if not os.path.exists(test_output_path+"/trans_label/"):
+            os.makedirs(test_output_path+"/trans_label/")
+            for idx in range(test_label.shape[0]):
+                label = test_label[idx].detach().cpu().numpy().astype(np.uint8)
+                save_label = sitk.GetImageFromArray(label)
+                sitk.WriteImage(save_label, test_output_path+"/trans_label/"+test_name[idx]+".nii.gz")
         for idx in range(save_seg.shape[0]):
             res_vol = save_seg[idx].numpy().astype(np.uint8)
             save_volume = sitk.GetImageFromArray(res_vol)
