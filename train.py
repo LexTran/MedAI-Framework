@@ -231,6 +231,7 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 # save validation results for visualization
                 if int(args.classes) == 1:
                     save_seg = val_seg.detach().cpu()
+                    save_seg = save_seg.squeeze(1)
                 elif int(args.classes) > 1:
                     save_seg = torch.argmax(val_seg, dim=1).detach().cpu()
                 if not os.path.exists(val_output_path+str(epoch+1)):

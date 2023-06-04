@@ -137,6 +137,7 @@ for step, test_sample in enumerate(test_loader):
         # save test results for visualization
         if int(args.classes) == 1:
             save_seg = test_seg.detach().cpu()
+            save_seg = save_seg.squeeze(1)
         elif int(args.classes) > 1:
             save_seg = torch.argmax(test_seg, dim=1).detach().cpu()
         if not os.path.exists(test_output_path):
