@@ -24,7 +24,7 @@ parser.add_argument('--resume_path', default=None, help='resume path')
 parser.add_argument('--bs', default=1, help='batch size')
 parser.add_argument('--output_path', default='./output/', help="save epoch")
 parser.add_argument('--dp', default=False, help="whether to use ddp or not")
-parser.add_argument('--classes', default=1, help="how many classes to segment")
+parser.add_argument('--classes', default=2, help="how many classes to segment")
 parser.add_argument('--data_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/images/", 
                     help="where you put your data")
 parser.add_argument('--mask_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/labels/", 
@@ -32,25 +32,17 @@ parser.add_argument('--mask_path', default="/home/ubuntu/disk1/TLX/datasets/seg_
 args = parser.parse_args()
 
 # set GPU
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+cudnn.enable = True
+cudnn.benchmark = True
 if args.dp:
     device_ids = [i for i in range(torch.cuda.device_count())]
 else:
     os.environ['CUDA_VISIBLE_DEVICES'] = str(np.argmax([int(x.split()[2]) for x in subprocess.Popen(
         "nvidia-smi -q -d Memory | grep -A4 GPU | grep Free", shell=True, stdout=subprocess.PIPE).stdout.readlines()]))
-    cudnn.benchmark = False
-    device_ids = [1]
+    device_ids = [0]
 
-# loading datasets
-batch_size = int(args.bs)
-ct_path1 = "/home/ubuntu/disk1/TLX/datasets/Task501_Spine/imagesTr/"
-x_path1 = "/home/ubuntu/disk1/TLX/datasets/Task501_Spine/Xray/"
-ct_path = [ct_path1]
-drr_path = [x_path1]
-
-test_loader = get_loader(batch_size, drr_path, ct_path, mode='test')
-shape = test_loader.dataset[0][0]["volume"].shape
-num_sample = len(test_loader.dataset[0])
-
+# set your model
 model = UNet(
     dimensions=3,
     in_channels=1,
@@ -60,6 +52,7 @@ model = UNet(
     num_res_units=2,
 )
 
+# whether to use data parallel to support multi GPUs
 if args.dp:
     print("Using multi GPUs...")
     device = torch.device("cuda:0")
@@ -69,6 +62,18 @@ else:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 # device = torch.device("cpu")
+
+# loading datasets
+batch_size = int(args.bs)
+ct_path1 = args.data_path
+x_path1 = args.mask_path
+ct_path = [ct_path1]
+drr_path = [x_path1]
+test_loader = get_loader(batch_size, drr_path, ct_path, mode='test')
+
+# calculate flops and params
+shape = test_loader.dataset[0][0]["volume"].shape
+num_sample = len(test_loader.dataset[0])
 flops, params = profile(model, inputs=(torch.randn(num_sample,shape[0],shape[1],shape[2],shape[3]).to(device),))
 print('flops: {:.2f}G, params: {:.2f}M'.format(flops/1e9, params/1e6))
 
@@ -105,7 +110,7 @@ for step, test_sample in enumerate(test_loader):
         test_name = test_sample['name']
         
         # segmentation
-        test_seg = sliding_window_inference(test_ct,(96,96,96),4,model,overlap=0.8)
+        test_seg = sliding_window_inference(test_ct,(32,32,32),4,model,overlap=0.8)
         
         test_labels_list = decollate_batch(test_label)
         test_labels_convert = [tfs.AsDiscrete(to_onehot=int(args.classes))(test_label_tensor) for test_label_tensor in test_labels_list]
@@ -119,7 +124,7 @@ for step, test_sample in enumerate(test_loader):
         if not os.path.exists(test_output_path):
             os.makedirs(test_output_path)
         for idx in range(save_seg.shape[0]):
-            res_vol = save_seg[idx].numpy()
+            res_vol = save_seg[idx].numpy().astype(np.uint8)
             save_volume = sitk.GetImageFromArray(res_vol)
             sitk.WriteImage(save_volume, test_output_path+"/"+test_name[idx]+".nii.gz")
     

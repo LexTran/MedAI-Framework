@@ -26,7 +26,7 @@ import time
 # parameters
 parser = argparse.ArgumentParser(description='Medical 3D Segmentation')
 parser.add_argument('--resume_path', default=None, help='resume path')
-parser.add_argument('--epoch', default=200, help='training epoch')
+parser.add_argument('--epoch', default=100, help='training epoch')
 parser.add_argument('--bs', default=1, help='batch size')
 parser.add_argument('--lr', default=0.01, help="learning rate")
 parser.add_argument('--l1', default=1, help="lambda1 for reconstruction loss")
@@ -34,7 +34,7 @@ parser.add_argument('--board', default='./runs', help="tensorboard path")
 parser.add_argument('--save_path', default='./checkpoints/', help="save path")
 parser.add_argument('--output_path', default='./output/', help="save epoch")
 parser.add_argument('--dp', default=False, help="whether to use ddp or not")
-parser.add_argument('--classes', default=1, help="how many classes to segment")
+parser.add_argument('--classes', default=2, help="how many classes to segment")
 parser.add_argument('--data_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/images/", 
                     help="where you put your data")
 parser.add_argument('--mask_path', default="/home/ubuntu/disk1/TLX/datasets/seg_demo/multi-organ/labels/", 
@@ -43,15 +43,16 @@ args = parser.parse_args()
 
 # set GPU
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-
+cudnn.enable = True
+cudnn.benchmark = True
 if args.dp:
     device_ids = [i for i in range(torch.cuda.device_count())]
 else:
     os.environ['CUDA_VISIBLE_DEVICES'] = str(np.argmax([int(x.split()[2]) for x in subprocess.Popen(
         "nvidia-smi -q -d Memory | grep -A4 GPU | grep Free", shell=True, stdout=subprocess.PIPE).stdout.readlines()]))
-    cudnn.benchmark = False
-    device_ids = [1]
+    device_ids = [0]
 
+# set your model
 model = UNet(
     spatial_dims=3,
     in_channels=1,
@@ -61,6 +62,7 @@ model = UNet(
     num_res_units=2,
 )
 
+# whether to use data parallel to support multi GPUs
 if args.dp:
     print("Using multi GPUs...")
     device = torch.device("cuda:0")
@@ -77,13 +79,15 @@ ct_path1 = args.data_path
 mask_path1 = args.mask_path
 ct_path = [ct_path1]
 label_path = [mask_path1]
-
 train_loader, val_loader = get_loader(batch_size, label_path, ct_path, mode='train')
+
+# calculate flops and params
 shape = train_loader.dataset[0][0]["volume"].shape
 num_sample = len(train_loader.dataset[0])
 flops, params = profile(model, inputs=(torch.randn(num_sample,shape[0],shape[1],shape[2],shape[3]).to(device),))
 print('flops: {:.2f}G, params: {:.2f}M'.format(flops/1e9, params/1e6))
 
+# optimizer and scheduler
 optimizer = optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=1e-5)
 scheduler = WarmupCosineSchedule(optimizer, 
                                 warmup_steps=10*len(train_loader), 
@@ -124,8 +128,9 @@ save_path = args.save_path
 # tensorboard
 writer = SummaryWriter(args.board)
 
+# training settings
 start = time.time()
-val_interval = 1
+val_interval = 10
 save_interval = 25
 if best_dice_metric == None:
     best_dice_metric = -1
@@ -144,7 +149,7 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
     model.train()
     scheduler.step()
     for step, sample in enumerate(train_loader):
-        with torch.autograd.set_detect_anomaly(True):
+        with torch.autograd.set_detect_anomaly(False):
             label = sample['label']
             ct = sample['volume']
             label = label.float().to(device)
@@ -156,14 +161,21 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
             loss = seg_loss
 
             scaler.scale(loss).backward()
+            # perform gradient clipping in case of gradient explosion 
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=10, norm_type=2)
+            # in case there is nan in results
+            assert not torch.any(torch.isnan(seg)), "nan in seg"
             running_loss += loss.item()
             scaler.unscale_(optimizer)
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad()
+
+            # we are using amp, so we don't need to use standard loss.backward()
+            # but you can choose to use standard loss.backward() as follow if you want
+
             # loss.backward()
             # optimizer.step()
-
             # running_loss += loss.item()
 
     writer.add_scalar('average loss: {:%.4f}', running_loss/len(train_loader), epoch+1)
@@ -182,7 +194,7 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 
                 # segmentation
                 with torch.cuda.amp.autocast():
-                    val_seg = sliding_window_inference(val_ct,(96,96,96),4,model,overlap=0.8)
+                    val_seg = sliding_window_inference(val_ct,(32,32,32),4,model,overlap=0.8)
                 val_labels_list = decollate_batch(val_label)
                 val_labels_convert = [tfs.AsDiscrete(to_onehot=int(args.classes))(val_label_tensor) for val_label_tensor in val_labels_list]
                 val_outputs_list = decollate_batch(val_seg)
@@ -195,7 +207,7 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                 if not os.path.exists(val_output_path+str(epoch+1)):
                     os.makedirs(val_output_path+str(epoch+1))
                 for idx in range(save_seg.shape[0]):
-                    res_vol = save_seg[idx].numpy()
+                    res_vol = save_seg[idx].numpy().astype(np.uint8)
                     save_volume = sitk.GetImageFromArray(res_vol)
                     sitk.WriteImage(save_volume, val_output_path+str(epoch+1)+"/"+val_name[idx]+".nii.gz")
         
