@@ -42,9 +42,22 @@ else:
         "nvidia-smi -q -d Memory | grep -A4 GPU | grep Free", shell=True, stdout=subprocess.PIPE).stdout.readlines()]))
     device_ids = [0]
 
+# loading datasets
+batch_size = int(args.bs)
+ct_path1 = args.data_path
+x_path1 = args.mask_path
+ct_path = [ct_path1]
+drr_path = [x_path1]
+test_loader = get_loader(batch_size, drr_path, ct_path, mode='test')
+dim = len(test_loader.dataset[0][0]["volume"].shape)-1
+if dim == 2:
+    post_fix = ".png"
+elif dim == 3:
+    post_fix = ".nii.gz"
+
 # set your model
 model = UNet(
-    dimensions=3,
+    dimensions=dim,
     in_channels=1,
     out_channels=int(args.num_classes),
     channels=(16, 32, 64, 128, 256),
@@ -62,14 +75,6 @@ else:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 # device = torch.device("cpu")
-
-# loading datasets
-batch_size = int(args.bs)
-ct_path1 = args.data_path
-x_path1 = args.mask_path
-ct_path = [ct_path1]
-drr_path = [x_path1]
-test_loader = get_loader(batch_size, drr_path, ct_path, mode='test')
 
 # calculate flops and params
 shape = test_loader.dataset[0][0]["volume"].shape
@@ -102,11 +107,13 @@ test_output_path = args.output_path+'/test/'
 # post-processing
 if int(args.classes) == 1:
     post_label = tfs.Compose([tfs.AsDiscrete(threshold=0.5)])
-    post_pred = tfs.Compose([tfs.Activations(sigmoid=True),tfs.AsDiscrete(threshold=0.5)])
+    post_pred = tfs.Compose([tfs.Activations(sigmoid=True),tfs.AsDiscrete(threshold=0.5),
+                             tfs.KeepLargestConnectedComponent(),tfs.FillHoles()])
 elif int(args.classes) > 1:
     post_label = tfs.Compose([tfs.AsDiscrete(to_onehot=int(args.classes))])
-    post_pred = tfs.Compose([tfs.Activations(softmax=True),tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))])
-
+    post_pred = tfs.Compose([tfs.Activations(softmax=True),tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes)),
+                             tfs.KeepLargestConnectedComponent(is_onehot=True),
+                             tfs.RemoveSmallObjects(min_size=32,independent_channels=True),tfs.FillHoles()])
 start = time.time()
 
 # inference
@@ -114,7 +121,7 @@ dice_metric = 0
 model.eval()
 for step, test_sample in enumerate(test_loader):
     with torch.no_grad():
-        test_label, test_ct = test_sample["label"].float().cuda(), test_sample["volume"].float().cuda()
+        test_label, test_ct = torch.round(test_sample["label"].float().cuda()), test_sample["volume"].float().cuda()
         test_name = test_sample['name']
         
         # segmentation
@@ -139,11 +146,11 @@ for step, test_sample in enumerate(test_loader):
             for idx in range(test_label.shape[0]):
                 label = test_label[idx].detach().cpu().numpy().astype(np.uint8)
                 save_label = sitk.GetImageFromArray(label)
-                sitk.WriteImage(save_label, test_output_path+"/trans_label/"+test_name[idx]+".nii.gz")
+                sitk.WriteImage(save_label, test_output_path+"/trans_label/"+test_name[idx]+post_fix)
         for idx in range(save_seg.shape[0]):
             res_vol = save_seg[idx].numpy().astype(np.uint8)
             save_volume = sitk.GetImageFromArray(res_vol)
-            sitk.WriteImage(save_volume, test_output_path+"/"+test_name[idx]+".nii.gz")
+            sitk.WriteImage(save_volume, test_output_path+"/"+test_name[idx]+post_fix)
     
     mean_dice = Dice.item()
 

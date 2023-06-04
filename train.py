@@ -35,9 +35,9 @@ parser.add_argument('--save_path', default='./checkpoints/', help="save path")
 parser.add_argument('--output_path', default='./output/', help="save epoch")
 parser.add_argument('--dp', default=False, help="whether to use ddp or not")
 parser.add_argument('--classes', default=1, help="how many classes to segment")
-parser.add_argument('--data_path', default="../../datasets/seg_demo/images/", 
+parser.add_argument('--data_path', default="../../datasets/seg_demo/multi-organ/images/", 
                     help="where you put your data")
-parser.add_argument('--mask_path', default="../../datasets/seg_demo/labels/", 
+parser.add_argument('--mask_path', default="../../datasets/seg_demo/multi-organ/labels/", 
                     help="where you put your mask")
 parser.add_argument('--amp', default=False, help="whether to use amp or not")
 args = parser.parse_args()
@@ -53,9 +53,22 @@ else:
         "nvidia-smi -q -d Memory | grep -A4 GPU | grep Free", shell=True, stdout=subprocess.PIPE).stdout.readlines()]))
     device_ids = [0]
 
+# loading datasets
+batch_size = int(args.bs)
+ct_path1 = args.data_path
+mask_path1 = args.mask_path
+ct_path = [ct_path1]
+label_path = [mask_path1]
+train_loader, val_loader = get_loader(batch_size, label_path, ct_path, mode='train')
+dim = len(train_loader.dataset[0][0]["volume"].shape)-1
+if dim == 2:
+    post_fix = ".png"
+elif dim == 3:
+    post_fix = ".nii.gz"
+
 # set your model
 model = UNet(
-    spatial_dims=3,
+    spatial_dims=dim,
     in_channels=1,
     out_channels=int(args.classes),
     channels=(16, 32, 64, 128, 256),
@@ -73,14 +86,6 @@ else:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 # device = torch.device("cpu")
-
-# loading datasets
-batch_size = int(args.bs)
-ct_path1 = args.data_path
-mask_path1 = args.mask_path
-ct_path = [ct_path1]
-label_path = [mask_path1]
-train_loader, val_loader = get_loader(batch_size, label_path, ct_path, mode='train')
 
 # calculate flops and params
 shape = train_loader.dataset[0][0]["volume"].shape
@@ -150,10 +155,13 @@ optimizer.step()
 # post-processing
 if int(args.classes) == 1:
     post_label = tfs.Compose([tfs.AsDiscrete(threshold=0.5)])
-    post_pred = tfs.Compose([tfs.Activations(sigmoid=True),tfs.AsDiscrete(threshold=0.5)])
+    post_pred = tfs.Compose([tfs.Activations(sigmoid=True),tfs.AsDiscrete(threshold=0.5),
+                             tfs.KeepLargestConnectedComponent(),tfs.FillHoles()])
 elif int(args.classes) > 1:
     post_label = tfs.Compose([tfs.AsDiscrete(to_onehot=int(args.classes))])
-    post_pred = tfs.Compose([tfs.Activations(softmax=True),tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes))])
+    post_pred = tfs.Compose([tfs.Activations(softmax=True),tfs.AsDiscrete(argmax=True, to_onehot=int(args.classes)),
+                             tfs.KeepLargestConnectedComponent(is_onehot=True),
+                             tfs.RemoveSmallObjects(min_size=32,independent_channels=True),tfs.FillHoles()])
 
 # training loop
 for epoch in range(epoch_start, epoch_start+int(args.epoch)):
@@ -165,9 +173,11 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
         with torch.autograd.set_detect_anomaly(False):
             label = sample['label']
             ct = sample['volume']
-            label = label.float().to(device)
+            label = torch.round(label.float().to(device))
             ct = ct.float().to(device)
             name = sample['name']
+            if int(args.classes) == 1:
+                label[label!=6] = 0
             with torch.cuda.amp.autocast():
                 seg = model(ct)
                 seg_loss = int(args.l1)*loss_fn(seg, label)
@@ -201,8 +211,11 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
         model.eval()
         for step, val_sample in enumerate(val_loader):
             with torch.no_grad():
-                val_label, val_ct = val_sample["label"].float().cuda(), val_sample["volume"].float().cuda()
+                val_label, val_ct = torch.round(val_sample["label"].float().cuda()), val_sample["volume"].float().cuda()
                 val_name = val_sample['name']
+                # just for testing
+                if int(args.classes) == 1:
+                    val_label[val_label!=6] = 0
                 
                 # segmentation
                 with torch.cuda.amp.autocast():
@@ -227,11 +240,11 @@ for epoch in range(epoch_start, epoch_start+int(args.epoch)):
                     for idx in range(val_label.shape[0]):
                         label = val_label[idx].detach().cpu().numpy().astype(np.uint8)
                         save_label = sitk.GetImageFromArray(label)
-                        sitk.WriteImage(save_label, val_output_path+"/trans_label/"+val_name[idx]+".nii.gz")
+                        sitk.WriteImage(save_label, val_output_path+"/trans_label/"+val_name[idx]+post_fix)
                 for idx in range(save_seg.shape[0]):
                     res_vol = save_seg[idx].numpy().astype(np.uint8)
                     save_volume = sitk.GetImageFromArray(res_vol)
-                    sitk.WriteImage(save_volume, val_output_path+str(epoch+1)+"/"+val_name[idx]+".nii.gz")
+                    sitk.WriteImage(save_volume, val_output_path+str(epoch+1)+"/"+val_name[idx]+post_fix)
         
         mean_dice = Dice.item()
 
