@@ -4,11 +4,16 @@ import numpy as np
 from chamfer_distance import ChamferDistance
 import mcubes
 from monai.transforms.post.array import AsDiscrete
-from torchmetrics.functional import peak_signal_noise_ratio as psnr
 from torchmetrics.functional import mean_absolute_error as mae
 from torchmetrics.functional import structural_similarity_index_measure as ssim
 from torchmetrics.functional import mean_squared_error as mse
 from torchmetrics.functional import dice
+
+def iou(predict, gt):
+    intersection = torch.sum(predict.mul(gt)).type(torch.float32)
+    union = torch.sum(torch.ge(predict.add(gt), 1)).type(torch.float32)
+
+    return (intersection / union).item()
 
 def ap(predict, gt):
     predict_clone = predict.clone().cpu().numpy()
@@ -40,12 +45,18 @@ def cd(predict, gt):
         cd_metrics += torch.mean(dist1) + torch.mean(dist2)
     return (cd_metrics / batch_size).item()
 
-def compute_metrics(val_recon_g, val_ct):
+# def Dice(recon, ct):
+#     ct[]
+
+def compute_metrics(val_recon_g, val_ct, val_mask, val_mean, val_std):
     mae_metric = mae(val_recon_g, val_ct)
     mse_metric = mse(val_recon_g, val_ct)
-    psnr_metric = psnr(val_recon_g, val_ct)
-    val_recon_g = AsDiscrete(argmax=True)(val_recon_g)
-    val_ct = AsDiscrete(argmax=True)(val_ct)
+    # psnr_metric = psnr(val_recon_g, val_ct)
+    psnr_metric = 10*torch.log10(((4596-val_mean)/val_std)**2/mse_metric).mean()
     ssim_metric = ssim(val_recon_g, val_ct)
-    dice_metric = dice(val_recon_g.int(), val_ct.int())
+    # dice_metric = dice(AsDiscrete(argmax=True)(val_recon_g).int(), AsDiscrete(argmax=True)(val_ct).int())
+    recon_mask = torch.nn.Sigmoid()(val_recon_g)
+    recon_mask[recon_mask>0.44] = 1
+    recon_mask[recon_mask<=0.44] = 0
+    dice_metric = dice(recon_mask, val_mask)
     return mae_metric, mse_metric, psnr_metric, ssim_metric, dice_metric
