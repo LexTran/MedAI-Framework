@@ -5,6 +5,8 @@ This repository provides an universal pipeline for medical image segmentation wi
 * <a href="#train">Training</a>
 * <a href="#test">Testing</a>
 * <a href="#multi">Multi-label Segmentation</a>
+* <a href="#recon">Reconstruction</a>
+* <a href="#regis">Registration</a>
 * <a href="#todo">TO DO</a>
 
 ## <div id="require">Requirement</div>
@@ -23,23 +25,41 @@ Here we give the environment tested on our device, but we havn't tried on differ
 
 ## <div id="train">Training</div>
 
-To train your own network, you need to create a model file under `\network` and use it in `train.py`
+To train your own network, you need to create a model file under `\network` and use it in `segmentation.py`
 
 The command to run training is as follow:
 ```
-python train.py --epoch=<how many epoch you want to train> --lr=<learning rate> --board=<where to put your tensorboard log> --save_path=<where to save your model> --output_path=<where to save your results for visualization> --dp=<whether to use data parallel> --classes=<number of your segmentation targets> --data_path=<your data path> --mask_path=<your label path>
+python segmentation.py --mode=train --epoch=<how many epoch you want to train> --lr=<learning rate> --board=<where to put your tensorboard log> --save_path=<where to save your model> --output_path=<where to save your results for visualization> --dp=<whether to use data parallel> --classes=<number of your segmentation targets> --data_path=<your data path> --mask_path=<your label path>
 ```
 
 ## <div id="test">Testing</div>
 
 To test the well-trained network, you can run testing as follow:
 ```
-python test.py --resume_path=<where to load your model> --output_path=<where to save your results for visualization> --dp=<whether to use data parallel> --classes=<number of your segmentation targets> --data_path=<your data path> --mask_path=<your label path>
+python segmentation.py --mode=test --resume_path=<where to load your model> --output_path=<where to save your results for visualization> --dp=<whether to use data parallel> --classes=<number of your segmentation targets> --data_path=<your data path> --mask_path=<your label path>
 ```
 
 ## <div id="multi">Multi-label segmentaion</div>
 
 Our framework supports multi-organ segmentaion, which in many cases may encounter with multiple label files. We have written a script to convert multiple labels into one label, you can find it under `\utils`, named `label_convert.py`.
+
+## <div id="recon">Reconstruction</div>
+
+We also support 3D reconstruction, to do so, you need to prepare your into 3 directories, including `datasets\ct\`, `datasets\drr\front\` and `datasets\drr\side\`.
+
+To train your reconstruction net, use following command:
+```
+python reconstruction.py --mode=train --epoch=<how many epoch you want to train> --lr=<learning rate> --board=<where to put your tensorboard log> --save_path=<where to save your model> --output_path=<where to save your results for visualization> --dp=<whether to use data parallel> --data_path=<your data path> --drr_path=<your drr path>
+```
+
+## <div id="regis">Registration</div>
+
+The medical image registration will be supported soon.
+
+Ideally, you can train your registration net using following command:
+```
+python registration.py --mode=train --epoch=<how many epoch you want to train> --lr=<learning rate> --board=<where to put your tensorboard log> --save_path=<where to save your model> --output_path=<where to save your results for visualization> --dp=<whether to use data parallel> --fixed_path=<your fixed data path> --moving_path=<your moving data path>
+```
 
 ## Tips
 
@@ -48,6 +68,7 @@ We have provided many useful tools to help you perform data format convertion su
 ## <div id="todo">To Do</div>
 - [x] Add Multi-task segmentation
 - [x] Convert multi labels into one label
+- [x] Extend this framework to enable reconstruction
 - [ ] Semi-supervised support
 - [ ] Accelerate 3d convolution using self-defined operator in Taichi
 - [ ] Extend this framework to enable registration and reconstruction
