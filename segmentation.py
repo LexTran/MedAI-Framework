@@ -215,7 +215,6 @@ def train():
         if (epoch + 1) % val_interval == 0:
             # reset metrics for each validation
             # dice_metric.reset()
-            dice_metric = 0
             model.eval()
             for step, val_sample in enumerate(val_loader):
                 with torch.no_grad():
