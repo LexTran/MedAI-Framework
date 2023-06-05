@@ -34,12 +34,12 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             tfs.NormalizeIntensityd(keys=["volume"]),
             tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
             tfs.Orientationd(keys=["volume", "label"], axcodes="RAS"),
-            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
+            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 1.5), mode="bilinear"),
             tfs.EnsureTyped(keys=["volume", "label"], device=torch.device("cpu"), track_meta=False),
             tfs.RandCropByPosNegLabeld(
                 keys=["volume", "label"],
                 label_key="label",
-                spatial_size=(48, 48, 48),
+                spatial_size=(32, 32, 32),
                 pos=1,
                 neg=1,
                 num_samples=4,
@@ -63,7 +63,7 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             tfs.NormalizeIntensityd(keys=["volume"]),
             tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
             tfs.Orientationd(keys=["volume", "label"], axcodes="RAS"),
-            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
+            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 1.5), mode="bilinear"),
             tfs.EnsureTyped(keys=["volume", "label"], device=torch.device("cpu"), track_meta=True),
         ])
         val_set = monai.data.CacheDataset(data=val_files,
@@ -96,7 +96,7 @@ def get_loader(bs, label_path: list, ct_path: list, mode="train"):
             tfs.NormalizeIntensityd(keys=["volume"]),
             tfs.CropForegroundd(keys=["volume", "label"], source_key="volume"),
             tfs.Orientationd(keys=["volume", "label"], axcodes="RAS"),
-            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 2.0), mode="bilinear"),
+            tfs.Spacingd(keys=["volume","label"], pixdim=(1.5, 1.5, 1.5), mode="bilinear"),
             tfs.EnsureTyped(keys=["image", "label"], device=torch.device("cpu"), track_meta=True),
         ])
         test_loader = monai.data.CacheDataset(data=test_files,
